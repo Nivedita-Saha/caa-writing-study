@@ -95,6 +95,12 @@ st.markdown(
     }
 
     /* Writing and input areas: warm cream, soft border */
+    /* Force input and textarea text to be dark and readable */
+    textarea, input, .stTextInput input, .stTextArea textarea {
+        color: #4A3F35 !important;
+        -webkit-text-fill-color: #4A3F35 !important;
+    }
+
     textarea, input {
         border-radius: 10px !important;
         border: 1px solid #D9C2A8 !important;
