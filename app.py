@@ -18,9 +18,16 @@ def get_sheet():
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive",
     ]
-    creds = Credentials.from_service_account_file(
-        ".streamlit/service_account.json", scopes=scopes
-    )
+    # Online (Streamlit Cloud): read the key from secrets.
+    # Locally: fall back to the key file.
+    if "gcp_service_account" in st.secrets:
+        creds = Credentials.from_service_account_info(
+            dict(st.secrets["gcp_service_account"]), scopes=scopes
+        )
+    else:
+        creds = Credentials.from_service_account_file(
+            ".streamlit/service_account.json", scopes=scopes
+        )
     gc = gspread.authorize(creds)
     sh = gc.open_by_key(st.secrets["SHEET_ID"])
     worksheet = sh.sheet1
