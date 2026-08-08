@@ -234,9 +234,19 @@ FIXED_REFUSAL = (
 def reflection_prompt(current_essay):
     instruction = (
         NO_ANSWER_RULE
-        + " Read what the student has written so far. Ask them ONE short, simple "
-        "question that pushes them to think more deeply or see another side. "
-        "Ask only the question, nothing else."
+        + " The student is stuck and wants help with ideas. Do NOT just ask them "
+        "a question, because that can feel discouraging when they are stuck. "
+        "INSTEAD, lead with concrete help: give them TWO or THREE short idea "
+        "directions or angles they could think about, written as brief plain "
+        "statements, so they have real material to react to. If they named a part "
+        "(introduction, body, conclusion), briefly say what that part usually does "
+        "and suggest a couple of angles for it. You may end with ONE short, "
+        "encouraging question, but the main body of your reply must be IDEAS and "
+        "directions, not questions. "
+        "STRICT LIMITS: never write essay sentences they could copy, never write a "
+        "full paragraph of essay text, never take a side or give your own opinion. "
+        "Offer thinking material, not the writing itself. Keep it to about four "
+        "short lines, in simple plain English."
     )
     response = client.chat.completions.create(
         model="llama-3.1-8b-instant",
@@ -384,44 +394,54 @@ if mode == "Writing Helper":
 
 else:
     st.subheader("Thinking Partner")
-    st.write("Chat with your thinking partner as you write. Use the buttons for a quick nudge.")
+    st.write("Type your question or a concept below, then choose the kind of help you want.")
 
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.button("Reflection question"):
-            if len(essay.split()) < 5:
-                st.warning("Write a little more first.")
-            else:
-                with st.spinner("Thinking..."):
-                    st.session_state["last_tool_output"] = reflection_prompt(essay)
-
-    with col2:
-        concept = st.text_input("Concept you find hard:", key="analogy_concept")
-        if st.button("Give an analogy"):
-            if not concept.strip():
-                st.warning("Type a concept first.")
-            else:
-                with st.spinner("Thinking..."):
-                    st.session_state["last_tool_output"] = analogy_generate(concept)
-
-    if st.session_state.get("last_tool_output"):
-        st.info(st.session_state["last_tool_output"])
+    tp_input = st.text_input(
+        "Your question or concept:",
+        key="tp_input",
+        placeholder="e.g. When did AI start?  or  machine learning",
+    )
 
     if "partner_messages" not in st.session_state:
         st.session_state["partner_messages"] = []
 
-    for m in st.session_state["partner_messages"]:
-        with st.chat_message(m["role"]):
-            st.write(m["content"])
+    def log_partner(kind, user_text, reply_text):
+        st.session_state["partner_messages"].append({"role": "user", "content": f"[{kind}] {user_text}"})
+        st.session_state["partner_messages"].append({"role": "assistant", "content": reply_text})
 
-    partner_msg = st.chat_input("Ask your thinking partner...")
-    if partner_msg:
-        st.session_state["partner_messages"].append({"role": "user", "content": partner_msg})
-        with st.spinner("Thinking..."):
-            reply = thinking_partner_reply(st.session_state["partner_messages"], essay)
-        st.session_state["partner_messages"].append({"role": "assistant", "content": reply})
-        st.rerun()
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        if st.button("Factual question"):
+            if not tp_input.strip():
+                st.warning("Type your question first.")
+            else:
+                with st.spinner("Thinking..."):
+                    reply = thinking_partner_reply([{"role": "user", "content": tp_input}], essay)
+                st.session_state["last_tp_output"] = reply
+                log_partner("fact", tp_input, reply)
+
+    with c2:
+        if st.button("Reflection question"):
+            with st.spinner("Thinking..."):
+                context = essay if essay.strip() else "The student has not started writing yet and wants help getting started."
+                reply = reflection_prompt(context)
+            st.session_state["last_tp_output"] = reply
+            log_partner("reflection", "(on essay)", reply)
+
+    with c3:
+        if st.button("Analogy"):
+            if not tp_input.strip():
+                st.warning("Type a concept first.")
+            else:
+                with st.spinner("Thinking..."):
+                    reply = analogy_generate(tp_input)
+                st.session_state["last_tp_output"] = reply
+                log_partner("analogy", tp_input, reply)
+
+    if st.session_state.get("last_tp_output"):
+        st.info(st.session_state["last_tp_output"])
+
 
 st.divider()
 
