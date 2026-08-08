@@ -125,14 +125,23 @@ st.markdown(
 
 st.title("CAA Writing Space")
 
-st.write("**Researcher: assign this participant to a group**")
-mode = st.radio(
-    label="Group",
-    options=["Writing Helper", "Thinking Partner"],
-    index=0,
-    horizontal=True,
-    label_visibility="collapsed",
-)
+# Group locks once a Participant ID has been entered, to protect study validity.
+group_locked = bool(st.session_state.get("locked_mode"))
+
+if group_locked:
+    locked = st.session_state["locked_mode"]
+    st.write(f"**Group (locked): {locked}**")
+    st.caption("The group is fixed for this session. To run a new participant, refresh the page.")
+    mode = locked
+else:
+    st.write("**Researcher: assign this participant to a group**")
+    mode = st.radio(
+        label="Group",
+        options=["Writing Helper", "Thinking Partner"],
+        index=0,
+        horizontal=True,
+        label_visibility="collapsed",
+    )
 
 st.session_state["mode"] = mode
 st.divider()
@@ -147,6 +156,11 @@ if not participant_id:
     st.stop()
 
 st.session_state["participant_id"] = participant_id
+
+# Lock the group to the current selection the first time an ID is entered.
+if "locked_mode" not in st.session_state:
+    st.session_state["locked_mode"] = st.session_state.get("mode", mode)
+    st.rerun()
 
 if "start_time" not in st.session_state:
     st.session_state["start_time"] = time.time()
