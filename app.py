@@ -272,7 +272,8 @@ def reflection_prompt(current_essay):
             {"role": "system", "content": instruction},
             {"role": "user", "content": f"Here is my essay so far: {current_essay}"},
         ],
-        max_tokens=80,
+        reasoning_effort="low",
+        max_completion_tokens=600,
     )
     return response.choices[0].message.content
 
@@ -290,7 +291,8 @@ def analogy_generate(concept):
             {"role": "system", "content": instruction},
             {"role": "user", "content": f"The concept I find hard is: {concept}"},
         ],
-        max_tokens=100,
+        reasoning_effort="low",
+        max_completion_tokens=500,
     )
     return response.choices[0].message.content
 
@@ -306,7 +308,8 @@ def writing_helper_reply(history):
     response = client.chat.completions.create(
         model=MODEL,
         messages=[system] + history,
-        max_tokens=400,
+        reasoning_effort="low",
+        max_completion_tokens=1200,
     )
     return response.choices[0].message.content
 
@@ -325,7 +328,8 @@ def thinking_partner_reply(history, current_essay):
     response = client.chat.completions.create(
         model=MODEL,
         messages=[system] + history,
-        max_tokens=150,
+        reasoning_effort="low",
+        max_completion_tokens=700,
     )
     return response.choices[0].message.content
 
