@@ -8,6 +8,10 @@ from groq import Groq
 
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
+# Groq deprecated llama-3.1-8b-instant (shutdown 16 Aug 2026).
+# openai/gpt-oss-20b is Groq's recommended replacement. Change here once.
+MODEL = "openai/gpt-oss-20b"
+
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -263,7 +267,7 @@ def reflection_prompt(current_essay):
         "short lines, in simple plain English."
     )
     response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
+        model=MODEL,
         messages=[
             {"role": "system", "content": instruction},
             {"role": "user", "content": f"Here is my essay so far: {current_essay}"},
@@ -281,7 +285,7 @@ def analogy_generate(concept):
         "Do not write essay text. Give only the analogy in one or two sentences."
     )
     response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
+        model=MODEL,
         messages=[
             {"role": "system", "content": instruction},
             {"role": "user", "content": f"The concept I find hard is: {concept}"},
@@ -300,7 +304,7 @@ def writing_helper_reply(history):
         ),
     }
     response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
+        model=MODEL,
         messages=[system] + history,
         max_tokens=400,
     )
@@ -319,7 +323,7 @@ def thinking_partner_reply(history, current_essay):
         ),
     }
     response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
+        model=MODEL,
         messages=[system] + history,
         max_tokens=150,
     )
@@ -339,6 +343,10 @@ def save_session():
     else:
         conversation = st.session_state.get("partner_messages", [])
     interaction_count = sum(1 for m in conversation if m["role"] == "user")
+
+    # Log the save to the container output so the Streamlit Cloud logs show,
+    # live, whether conversations are actually being captured.
+    print(f"[SAVE] {pid} | {grp} | turns={interaction_count} | words={word_count}")
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     base = f"{pid}_{stamp}"
@@ -383,6 +391,7 @@ def save_session():
     except Exception as e:
         sheet_ok = False
         st.session_state["sheet_error"] = str(e)
+        print(f"[SAVE][SHEET ERROR] {pid}: {e}")
 
     return txt_path, csv_path
 
@@ -400,9 +409,15 @@ if mode == "Writing Helper":
 
     user_msg = st.chat_input("Type your question here...")
     if user_msg:
+        # Record the user's turn first, so it is never lost even if the model call fails.
         st.session_state["helper_messages"].append({"role": "user", "content": user_msg})
-        with st.spinner("Thinking..."):
-            reply = writing_helper_reply(st.session_state["helper_messages"])
+        try:
+            with st.spinner("Thinking..."):
+                reply = writing_helper_reply(st.session_state["helper_messages"])
+        except Exception as e:
+            reply = f"[ERROR: {e}]"
+            print(f"[CHAT ERROR][helper] {e}")
+            st.error("The assistant could not respond just now. Please try again in a moment.")
         st.session_state["helper_messages"].append({"role": "assistant", "content": reply})
         st.rerun()
 
@@ -430,16 +445,26 @@ else:
             if not tp_input.strip():
                 st.warning("Type your question first.")
             else:
-                with st.spinner("Thinking..."):
-                    reply = thinking_partner_reply([{"role": "user", "content": tp_input}], essay)
+                try:
+                    with st.spinner("Thinking..."):
+                        reply = thinking_partner_reply([{"role": "user", "content": tp_input}], essay)
+                except Exception as e:
+                    reply = f"[ERROR: {e}]"
+                    print(f"[CHAT ERROR][fact] {e}")
+                    st.error("The assistant could not respond just now. Please try again in a moment.")
                 st.session_state["last_tp_output"] = reply
                 log_partner("fact", tp_input, reply)
 
     with c2:
         if st.button("Reflection question"):
-            with st.spinner("Thinking..."):
-                context = essay if essay.strip() else "The student has not started writing yet and wants help getting started."
-                reply = reflection_prompt(context)
+            try:
+                with st.spinner("Thinking..."):
+                    context = essay if essay.strip() else "The student has not started writing yet and wants help getting started."
+                    reply = reflection_prompt(context)
+            except Exception as e:
+                reply = f"[ERROR: {e}]"
+                print(f"[CHAT ERROR][reflection] {e}")
+                st.error("The assistant could not respond just now. Please try again in a moment.")
             st.session_state["last_tp_output"] = reply
             log_partner("reflection", "(on essay)", reply)
 
@@ -448,8 +473,13 @@ else:
             if not tp_input.strip():
                 st.warning("Type a concept first.")
             else:
-                with st.spinner("Thinking..."):
-                    reply = analogy_generate(tp_input)
+                try:
+                    with st.spinner("Thinking..."):
+                        reply = analogy_generate(tp_input)
+                except Exception as e:
+                    reply = f"[ERROR: {e}]"
+                    print(f"[CHAT ERROR][analogy] {e}")
+                    st.error("The assistant could not respond just now. Please try again in a moment.")
                 st.session_state["last_tp_output"] = reply
                 log_partner("analogy", tp_input, reply)
 
@@ -459,9 +489,28 @@ else:
 
 st.divider()
 
-if st.button("Submit and save my work"):
+# Which conversation belongs to this session's group.
+conv_key = "helper_messages" if mode == "Writing Helper" else "partner_messages"
+
+if st.session_state.get("saved"):
+    st.success("Your work has already been saved. Thank you. To run a new participant, refresh the page.")
+elif st.button("Submit and save my work"):
     if len(essay.split()) < 5:
         st.warning("Please write your essay before submitting.")
+    elif not st.session_state.get(conv_key):
+        # No conversation was recorded — most likely the assistant was not used
+        # or was not working. Confirm before saving an empty log.
+        st.warning(
+            "No conversation with the assistant was recorded for this session. "
+            "If that is correct, tick the box below and save again. If the "
+            "assistant should have been used, please check it is working first."
+        )
+        st.checkbox("Save anyway (no conversation)", key="allow_empty_save")
+        if st.session_state.get("allow_empty_save"):
+            save_session()
+            st.session_state["saved"] = True
+            st.success("Your work has been saved. Thank you.")
     else:
         save_session()
+        st.session_state["saved"] = True
         st.success("Your work has been saved. Thank you.")
